@@ -19,7 +19,7 @@ def get_embedding(text: str) -> list[float]:
 def generate_answer(prompt: str) -> str:
     """Generate a text response from Gemini 2.5 Pro."""
     response = client.models.generate_content(
-        model="gemini-2.5-pro",
+        model="gemini-2.5-flash",
         contents=prompt,
     )
     return response.text
