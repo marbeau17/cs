@@ -1,6 +1,7 @@
 import os
 
 from google import genai
+from google.genai import types
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
@@ -8,8 +9,9 @@ client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 def get_embedding(text: str) -> list[float]:
     """Return the embedding vector (768 dimensions) for the given text."""
     result = client.models.embed_content(
-        model="text-embedding-004",
+        model="gemini-embedding-001",
         contents=text,
+        config=types.EmbedContentConfig(output_dimensionality=768),
     )
     return result.embeddings[0].values
 

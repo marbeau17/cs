@@ -1,6 +1,7 @@
 """Generate htmx-compatible HTML fragment strings for server-side rendering."""
 
 from html import escape
+from typing import List, Dict, Optional
 
 
 def build_generate_response_html(
@@ -8,8 +9,8 @@ def build_generate_response_html(
     question: str = "",
     answer_draft: str = "",
     original_question: str = "",
-    similar_qas: list[dict] | None = None,
-    similar_results: list[dict] | None = None,
+    similar_qas: Optional[List[Dict]] = None,
+    similar_results: Optional[List[Dict]] = None,
 ) -> str:
     """Return HTML fragments for the editor area and reference pane.
 

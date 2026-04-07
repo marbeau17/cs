@@ -65,10 +65,12 @@ def cleanse(rows: list[dict]) -> list[dict]:
 
 
 def get_embedding(client: genai.Client, text: str) -> list[float]:
-    """Get a 768-dim embedding from Gemini text-embedding-004."""
+    """Get a 768-dim embedding from gemini-embedding-001."""
+    from google.genai import types
     result = client.models.embed_content(
-        model="text-embedding-004",
+        model="gemini-embedding-001",
         contents=text,
+        config=types.EmbedContentConfig(output_dimensionality=768),
     )
     return result.embeddings[0].values
 
