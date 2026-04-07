@@ -36,6 +36,34 @@ def insert_qa(
     return result.data
 
 
+def insert_qa_question_only(
+    question_text: str,
+    embedding: list[float],
+) -> str:
+    """Insert a question with empty answer. Returns the record ID."""
+    client = get_client()
+    result = client.table("qa_knowledge").insert({
+        "question_text": question_text,
+        "answer_text": "",
+        "embedding": embedding,
+    }).execute()
+    return result.data[0]["id"]
+
+
+def update_qa(
+    record_id: str,
+    answer_text: str,
+    embedding: list[float],
+) -> dict:
+    """Update an existing record with the finalized answer and new embedding."""
+    client = get_client()
+    result = client.table("qa_knowledge").update({
+        "answer_text": answer_text,
+        "embedding": embedding,
+    }).eq("id", record_id).execute()
+    return result.data
+
+
 def get_stats() -> dict:
     client = get_client()
     count_result = client.table("qa_knowledge").select("id", count="exact").execute()

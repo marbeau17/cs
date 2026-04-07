@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from lib.gemini_client import generate_answer, get_embedding
-from lib.supabase_client import search_similar_qa, insert_qa, get_stats
+from lib.supabase_client import search_similar_qa, insert_qa, insert_qa_question_only, update_qa, get_stats
 from lib.prompt_template import build_prompt
 from lib.html_fragments import build_generate_response_html, build_toast_html
 
@@ -73,14 +73,18 @@ async def generate(question: str = Form(...)):
         # 3. Build the prompt with context
         prompt = build_prompt(question, similar_results)
 
-        # 4. Generate answer draft via Gemini
+        # 4. Save question to DB immediately (answer empty for now)
+        record_id = insert_qa_question_only(question, query_embedding)
+
+        # 5. Generate answer draft via Gemini
         draft_answer = generate_answer(prompt)
 
-        # 5. Build the HTML response (editor + reference cards)
+        # 6. Build the HTML response (editor + reference cards)
         html = build_generate_response_html(
             question=question,
             draft_answer=draft_answer,
             similar_results=similar_results,
+            record_id=record_id,
         )
         return HTMLResponse(content=html)
 
@@ -96,33 +100,45 @@ async def generate(question: str = Form(...)):
 
 
 @app.post("/api/learn", response_class=HTMLResponse)
-async def learn(question: str = Form(...), answer: str = Form(...)):
+async def learn(
+    question: str = Form(...),
+    answer: str = Form(...),
+    record_id: str = Form(""),
+):
     """
-    Learn a confirmed Q&A pair: embed the combined text, insert into
-    Supabase, and return a toast notification HTML fragment.
+    Finalize a Q&A pair: update the existing record (saved at generate time)
+    with the staff-confirmed answer and re-embed with full context.
     """
     try:
         # 1. Create embedding from combined question + answer
         combined_text = f"{question}\n\n{answer}"
         embedding = get_embedding(combined_text)
 
-        # 2. Insert into Supabase
-        insert_qa(
-            question_text=question,
-            answer_text=answer,
-            embedding=embedding,
-        )
+        if record_id:
+            # 2a. Update existing record with finalized answer
+            update_qa(
+                record_id=record_id,
+                answer_text=answer,
+                embedding=embedding,
+            )
+        else:
+            # 2b. Fallback: insert new record if no record_id
+            insert_qa(
+                question_text=question,
+                answer_text=answer,
+                embedding=embedding,
+            )
 
         # 3. Return success toast HTML
         html = build_toast_html(
-            message="学習が完了しました",
+            message="回答を確定しました。ナレッジDBに反映済みです。",
             toast_type="success",
         )
         return HTMLResponse(content=html)
 
     except Exception as e:
         error_html = build_toast_html(
-            message=f"学習に失敗しました: {str(e)}",
+            message=f"保存に失敗しました: {str(e)}",
             toast_type="error",
         )
         traceback.print_exc()

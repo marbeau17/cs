@@ -186,10 +186,11 @@
             });
         }
 
-        // --- 学習して次へ ---
+        // --- 回答を確定 ---
         function learnAndNext() {
             const editor = document.getElementById('answer-editor');
             const questionHidden = document.getElementById('original-question');
+            const recordIdHidden = document.getElementById('record-id');
             if (!editor || !questionHidden) return;
 
             const answer = editor.value.trim();
@@ -202,15 +203,18 @@
             // まずクリップボードにコピー
             navigator.clipboard.writeText(answer).catch(() => {});
 
-            // 学習APIへ送信
+            // 確定APIへ送信
             const formData = new FormData();
             formData.append('question', question);
             formData.append('answer', answer);
+            if (recordIdHidden && recordIdHidden.value) {
+                formData.append('record_id', recordIdHidden.value);
+            }
 
             const learnBtn = document.getElementById('learn-btn');
             if (learnBtn) {
                 learnBtn.disabled = true;
-                learnBtn.textContent = '学習中...';
+                learnBtn.textContent = '確定中...';
             }
 
             fetch('/api/learn', {
@@ -219,11 +223,11 @@
             })
             .then(res => {
                 if (res.ok) {
-                    showToast('学習完了！クリップボードにもコピーしました', 'success');
+                    showToast('回答を確定しました！クリップボードにもコピーしました', 'success');
                     resetAll();
                     loadStats();
                 } else {
-                    showToast('学習に失敗しました', 'error');
+                    showToast('保存に失敗しました', 'error');
                 }
             })
             .catch(() => {
@@ -232,7 +236,7 @@
             .finally(() => {
                 if (learnBtn) {
                     learnBtn.disabled = false;
-                    learnBtn.textContent = 'この内容で学習して次へ進む';
+                    learnBtn.textContent = '回答を確定する';
                 }
             });
         }
