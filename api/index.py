@@ -12,14 +12,24 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, Cookie, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel
 
 from lib.gemini_client import generate_answer, get_embedding
 from lib.supabase_client import search_similar_qa, insert_qa, insert_qa_question_only, update_qa, get_stats
 from lib.prompt_template import build_prompt
 from lib.html_fragments import build_generate_response_html, build_toast_html
+from lib.auth import create_token, get_current_user
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 # ---------------------------------------------------------------------------
 # App initialisation
@@ -37,6 +47,7 @@ app.add_middleware(
 
 # Path to static/index.html (relative to project root)
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+LOGIN_PATH = STATIC_DIR / "login.html"
 
 
 # ---------------------------------------------------------------------------
@@ -44,25 +55,79 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 # ---------------------------------------------------------------------------
 
 
+@app.get("/login", response_class=HTMLResponse)
+async def login_page():
+    """Serve the login page."""
+    if not LOGIN_PATH.exists():
+        return HTMLResponse(content="<h1>login.html not found</h1>", status_code=404)
+    return HTMLResponse(content=LOGIN_PATH.read_text(encoding="utf-8"))
+
+
+@app.post("/api/login")
+async def login(body: LoginRequest, response: Response):
+    """Authenticate user and set session cookie."""
+    from lib.supabase_client import verify_login
+    user = verify_login(body.email, body.password)
+    if not user:
+        return JSONResponse(content={"error": "Invalid credentials"}, status_code=401)
+    token = create_token(user)
+    response = JSONResponse(content={"ok": True, "name": user["name"], "role": user["role"]})
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=86400,
+    )
+    return response
+
+
+@app.post("/api/logout")
+async def logout():
+    """Clear session cookie."""
+    response = JSONResponse(content={"ok": True})
+    response.delete_cookie("session_token")
+    return response
+
+
+@app.get("/api/me")
+async def me(request: Request):
+    """Return current user info."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+    return JSONResponse(content={
+        "id": user.get("sub"),
+        "email": user.get("email"),
+        "name": user.get("name"),
+        "role": user.get("role"),
+        "is_admin": user.get("is_admin"),
+    })
+
+
 @app.get("/", response_class=HTMLResponse)
-async def serve_index():
-    """Serve the main SPA page."""
+async def serve_index(request: Request):
+    """Serve the main SPA page. Redirect to login if not authenticated."""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
-        return HTMLResponse(
-            content="<h1>index.html not found</h1>",
-            status_code=404,
-        )
+        return HTMLResponse(content="<h1>index.html not found</h1>", status_code=404)
     return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
 
 
 @app.post("/api/generate", response_class=HTMLResponse)
-async def generate(question: str = Form(...)):
+async def generate(request: Request, question: str = Form(...)):
     """
     Accept a customer question, find similar past Q&A via vector search,
     build a prompt, call Gemini for a draft answer, and return an HTML
     fragment (editor area + reference cards) for htmx to swap in.
     """
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
     try:
         # 1. Embed the incoming question
         query_embedding = get_embedding(question)
@@ -101,6 +166,7 @@ async def generate(question: str = Form(...)):
 
 @app.post("/api/learn", response_class=HTMLResponse)
 async def learn(
+    request: Request,
     question: str = Form(...),
     answer: str = Form(...),
     record_id: str = Form(""),
@@ -109,6 +175,9 @@ async def learn(
     Finalize a Q&A pair: update the existing record (saved at generate time)
     with the staff-confirmed answer and re-embed with full context.
     """
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
     try:
         # 1. Create embedding from combined question + answer
         combined_text = f"{question}\n\n{answer}"

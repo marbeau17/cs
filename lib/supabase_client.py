@@ -64,6 +64,18 @@ def update_qa(
     return result.data
 
 
+def verify_login(email: str, password: str):
+    """Verify user credentials via Supabase RPC. Returns user dict or None."""
+    client = get_client()
+    result = client.rpc("verify_user_login", {
+        "user_email": email,
+        "user_password": password,
+    }).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return None
+
+
 def get_stats() -> dict:
     client = get_client()
     count_result = client.table("qa_knowledge").select("id", count="exact").execute()
