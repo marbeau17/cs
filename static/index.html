@@ -52,11 +52,12 @@
                 </svg>
             </div>
             <div>
-                <h1 class="text-lg font-bold text-slate-800">ますびと商店</h1>
-                <p class="text-xs text-slate-500">カスタマーサポートAI回答支援</p>
+                <h1 class="text-lg font-bold text-slate-800" id="channel-name">CS AI回答支援</h1>
+                <p class="text-xs text-slate-500" id="channel-desc">カスタマーサポートAI回答支援</p>
             </div>
         </div>
         <div class="flex items-center gap-4">
+            <a href="/channels" class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors">チャネル一覧</a>
             <div id="user-info" class="flex items-center gap-3">
                 <div class="flex items-center gap-2">
                     <div class="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold" id="user-avatar"></div>
@@ -96,6 +97,7 @@
                   hx-post="/api/generate"
                   hx-target="#editor-area"
                   hx-indicator="#left-pane">
+                <input type="hidden" name="channel_slug" id="channel-slug">
                 <textarea
                     id="question-input"
                     name="question"
@@ -170,10 +172,42 @@
 
     <!-- JavaScript -->
     <script>
+        // --- チャネル検出 ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentChannel = urlParams.get('channel') || '';
+
+        async function loadChannel() {
+            if (!currentChannel) return;
+            try {
+                const res = await fetch('/api/channels/' + currentChannel + '/stats');
+                if (res.ok) {
+                    const stats = await res.json();
+                    document.getElementById('stats-count').textContent = stats.total_records || 0;
+                }
+            } catch {}
+            // Also try to get channel info from the channels list
+            try {
+                const res = await fetch('/api/channels');
+                if (res.ok) {
+                    const channels = await res.json();
+                    const ch = channels.find(c => c.slug === currentChannel);
+                    if (ch) {
+                        document.getElementById('channel-name').textContent = ch.name;
+                        document.getElementById('channel-desc').textContent = ch.description || 'カスタマーサポートAI回答支援';
+                    }
+                }
+            } catch {}
+        }
+
+        document.getElementById('channel-slug').value = currentChannel;
+
         // --- 統計情報の取得 ---
         async function loadStats() {
             try {
-                const res = await fetch('/api/stats');
+                const endpoint = currentChannel
+                    ? '/api/channels/' + currentChannel + '/stats'
+                    : '/api/stats';
+                const res = await fetch(endpoint);
                 const data = await res.json();
                 document.getElementById('stats-count').textContent = data.total_records || 0;
             } catch (e) {
@@ -210,6 +244,7 @@
         }
 
         loadUser();
+        loadChannel();
         loadStats();
 
         // --- クリップボードコピー ---

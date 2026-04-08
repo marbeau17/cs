@@ -12,14 +12,16 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Form, Request, Cookie, Response
+from fastapi import Body, FastAPI, Form, Request, Cookie, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from lib.gemini_client import generate_answer, get_embedding
-from lib.supabase_client import search_similar_qa, insert_qa, insert_qa_question_only, update_qa, get_stats
-from lib.prompt_template import build_prompt
+from lib.supabase_client import (search_similar_qa, insert_qa, insert_qa_question_only, update_qa, get_stats,
+    verify_login, get_channels, get_channel_by_slug, create_channel, update_channel, delete_channel,
+    get_channel_stats, search_similar_qa_by_channel, insert_qa_question_only_with_channel, get_user_channels)
+from lib.prompt_template import build_prompt, build_channel_prompt
 from lib.html_fragments import build_generate_response_html, build_toast_html
 from lib.auth import create_token, get_current_user
 
@@ -30,6 +32,15 @@ from lib.auth import create_token, get_current_user
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+class CreateChannelRequest(BaseModel):
+    name: str
+    slug: str
+    description: str = ""
+    system_prompt: str
+    greeting_prefix: str = ""
+    signature: str = ""
+    color: str = "#2563EB"
 
 # ---------------------------------------------------------------------------
 # App initialisation
@@ -66,7 +77,6 @@ async def login_page():
 @app.post("/api/login")
 async def login(body: LoginRequest, response: Response):
     """Authenticate user and set session cookie."""
-    from lib.supabase_client import verify_login
     user = verify_login(body.email, body.password)
     if not user:
         return JSONResponse(content={"error": "Invalid credentials"}, status_code=401)
@@ -106,12 +116,108 @@ async def me(request: Request):
     })
 
 
-@app.get("/", response_class=HTMLResponse)
-async def serve_index(request: Request):
-    """Serve the main SPA page. Redirect to login if not authenticated."""
+@app.get("/channels", response_class=HTMLResponse)
+async def channels_page(request: Request):
+    """Serve the channel selection page."""
     user = get_current_user(request)
     if not user:
         return RedirectResponse(url="/login")
+    channels_path = STATIC_DIR / "channels.html"
+    if not channels_path.exists():
+        return HTMLResponse(content="<h1>channels.html not found</h1>", status_code=404)
+    return HTMLResponse(content=channels_path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/channels")
+async def list_channels(request: Request):
+    """List all channels (or user's channels)."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+    channels = get_channels()
+    return JSONResponse(content=channels)
+
+
+@app.post("/api/channels")
+async def create_new_channel(request: Request, body: CreateChannelRequest):
+    """Create a new channel (admin only)."""
+    user = get_current_user(request)
+    if not user or not user.get("is_admin"):
+        return JSONResponse(content={"error": "Admin access required"}, status_code=403)
+    try:
+        channel = create_channel(
+            name=body.name, slug=body.slug, description=body.description,
+            system_prompt=body.system_prompt, greeting_prefix=body.greeting_prefix,
+            signature=body.signature, color=body.color, created_by=user["sub"],
+        )
+        return JSONResponse(content=channel)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
+
+
+@app.get("/api/channels/{channel_slug}/stats")
+async def channel_stats(request: Request, channel_slug: str):
+    """Get stats for a specific channel."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+    try:
+        channel = get_channel_by_slug(channel_slug)
+        if not channel:
+            return JSONResponse(content={"error": "Channel not found"}, status_code=404)
+        stats = get_channel_stats(channel["id"])
+        return JSONResponse(content=stats)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    """Serve the admin page (admin only)."""
+    user = get_current_user(request)
+    if not user or not user.get("is_admin"):
+        return RedirectResponse(url="/channels")
+    admin_path = STATIC_DIR / "admin.html"
+    if not admin_path.exists():
+        return HTMLResponse(content="<h1>admin.html not found</h1>", status_code=404)
+    return HTMLResponse(content=admin_path.read_text(encoding="utf-8"))
+
+
+@app.put("/api/channels/{channel_id}")
+async def update_channel_route(request: Request, channel_id: str, body: dict = Body(...)):
+    """Update a channel's settings (admin only)."""
+    user = get_current_user(request)
+    if not user or not user.get("is_admin"):
+        return JSONResponse(content={"error": "Admin access required"}, status_code=403)
+    try:
+        update_channel(channel_id, body)
+        return JSONResponse(content={"ok": True})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
+
+
+@app.delete("/api/channels/{channel_id}")
+async def delete_channel_route(request: Request, channel_id: str):
+    """Delete a channel and all its Q&A data (admin only)."""
+    user = get_current_user(request)
+    if not user or not user.get("is_admin"):
+        return JSONResponse(content={"error": "Admin access required"}, status_code=403)
+    try:
+        delete_channel(channel_id)
+        return JSONResponse(content={"ok": True})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_index(request: Request):
+    """Serve the main SPA page. Redirect to channels if no channel selected."""
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    channel_slug = request.query_params.get("channel")
+    if not channel_slug:
+        return RedirectResponse(url="/channels")
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         return HTMLResponse(content="<h1>index.html not found</h1>", status_code=404)
@@ -119,40 +225,34 @@ async def serve_index(request: Request):
 
 
 @app.post("/api/generate", response_class=HTMLResponse)
-async def generate(request: Request, question: str = Form(...)):
-    """
-    Accept a customer question, find similar past Q&A via vector search,
-    build a prompt, call Gemini for a draft answer, and return an HTML
-    fragment (editor area + reference cards) for htmx to swap in.
-    """
+async def generate(request: Request, question: str = Form(...), channel_slug: str = Form("")):
     user = get_current_user(request)
     if not user:
         return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
     try:
-        # 1. Embed the incoming question
         query_embedding = get_embedding(question)
 
-        # 2. Search Supabase for similar Q&A (top 3)
-        similar_results = search_similar_qa(query_embedding)
+        if channel_slug:
+            channel = get_channel_by_slug(channel_slug)
+            if channel:
+                similar_results = search_similar_qa_by_channel(query_embedding, channel["id"])
+                prompt = build_channel_prompt(question, similar_results, channel)
+                record_id = insert_qa_question_only_with_channel(question, query_embedding, channel["id"])
+            else:
+                similar_results = search_similar_qa(query_embedding)
+                prompt = build_prompt(question, similar_results)
+                record_id = insert_qa_question_only(question, query_embedding)
+        else:
+            similar_results = search_similar_qa(query_embedding)
+            prompt = build_prompt(question, similar_results)
+            record_id = insert_qa_question_only(question, query_embedding)
 
-        # 3. Build the prompt with context
-        prompt = build_prompt(question, similar_results)
-
-        # 4. Save question to DB immediately (answer empty for now)
-        record_id = insert_qa_question_only(question, query_embedding)
-
-        # 5. Generate answer draft via Gemini
         draft_answer = generate_answer(prompt)
-
-        # 6. Build the HTML response (editor + reference cards)
         html = build_generate_response_html(
-            question=question,
-            draft_answer=draft_answer,
-            similar_results=similar_results,
-            record_id=record_id,
+            question=question, draft_answer=draft_answer,
+            similar_results=similar_results, record_id=record_id,
         )
         return HTMLResponse(content=html)
-
     except Exception as e:
         error_html = (
             '<div class="p-4 bg-red-50 border border-red-200 rounded-lg">'

@@ -72,7 +72,7 @@
                     body: JSON.stringify({ email, password })
                 });
                 if (res.ok) {
-                    window.location.href = '/';
+                    window.location.href = '/channels';
                 } else {
                     errorEl.classList.remove('hidden');
                 }

@@ -30,14 +30,28 @@ uvicorn api.index:app --reload --port 8000
 ## ディレクトリ構成
 - api/ — FastAPIアプリ（Vercelサーバーレス関数）
 - lib/ — 共有ライブラリ（AI連携、DB連携、テンプレート）
-- static/ — フロントエンド（HTML）
+- static/ — フロントエンド（HTML: login, channels, admin, main CS画面）
 - scripts/ — DB初期化・データ投入スクリプト
 - data/ — 元データCSV
 
 ## APIエンドポイント
+- POST /api/login — ユーザー認証
+- POST /api/logout — ログアウト
+- GET /api/me — 現在のユーザー情報
+- GET /api/channels — チャネル一覧
+- POST /api/channels — チャネル作成（管理者のみ）
+- PUT /api/channels/{id} — チャネル更新（管理者のみ）
+- DELETE /api/channels/{id} — チャネル削除（管理者のみ）
+- GET /api/channels/{slug}/stats — チャネル別統計
 - POST /api/generate — 回答ドラフト生成（htmx HTML返却）
 - POST /api/learn — 確定回答の学習（DB保存）
 - GET /api/stats — ナレッジDB統計
+
+## ページ構成
+- /login — ログインページ
+- /channels — チャネル選択ページ
+- /?channel={slug} — CS回答支援画面（チャネル固有）
+- /admin — 管理画面（管理者のみ）
 
 ## デプロイ
 ```bash
