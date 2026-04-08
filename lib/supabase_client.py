@@ -150,13 +150,29 @@ def search_similar_qa_by_channel(query_embedding: list, channel_id: str,
                                   match_count: int = 3, match_threshold: float = 0.5) -> list:
     """Search similar Q&A within a specific channel."""
     client = get_client()
-    result = client.rpc("match_qa_knowledge_by_channel", {
-        "query_embedding": query_embedding,
-        "p_channel_id": channel_id,
-        "match_threshold": match_threshold,
-        "match_count": match_count,
-    }).execute()
-    return result.data
+    try:
+        result = client.rpc("match_qa_knowledge_by_channel", {
+            "query_embedding": query_embedding,
+            "p_channel_id": channel_id,
+            "match_threshold": match_threshold,
+            "match_count": match_count,
+        }).execute()
+        return result.data
+    except Exception:
+        # Fallback: use global search and filter by channel_id
+        result = client.rpc("match_qa_knowledge", {
+            "query_embedding": query_embedding,
+            "match_threshold": match_threshold,
+            "match_count": match_count * 3,
+        }).execute()
+        # Filter results by channel_id
+        filtered = []
+        if result.data:
+            ids = [r["id"] for r in result.data]
+            ch_check = client.table("qa_knowledge").select("id").eq("channel_id", channel_id).in_("id", ids).execute()
+            valid_ids = {r["id"] for r in ch_check.data}
+            filtered = [r for r in result.data if r["id"] in valid_ids][:match_count]
+        return filtered
 
 
 def insert_qa_with_channel(question_text: str, answer_text: str,
