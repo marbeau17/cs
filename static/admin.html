@@ -27,6 +27,7 @@
         </div>
         <div class="flex items-center gap-3">
             <a href="/channels" class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 px-2.5 py-1 rounded-lg">チャネル一覧</a>
+            <a href="/import" class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50">CSVインポート</a>
             <button onclick="logout()" class="text-xs text-slate-400 hover:text-red-500">ログアウト</button>
         </div>
     </header>
@@ -107,6 +108,8 @@
                     </div>
                     <div class="flex gap-2">
                         <button onclick='editChannel(${JSON.stringify(ch).replace(/'/g, "&#39;")})' class="text-xs px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50">編集</button>
+                        <button onclick="window.location.href='/import?channel=${ch.slug}'" class="text-xs px-3 py-1.5 border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50">インポート</button>
+                        <button onclick="window.location.href='/api/channels/${ch.slug}/export'" class="text-xs px-3 py-1.5 border border-emerald-200 text-emerald-600 rounded-lg hover:bg-emerald-50">エクスポート</button>
                         <button onclick="deleteChannel('${ch.id}', '${ch.name}')" class="text-xs px-3 py-1.5 border border-red-200 text-red-600 rounded-lg hover:bg-red-50">削除</button>
                     </div>
                 `;

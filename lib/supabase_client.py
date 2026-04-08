@@ -217,3 +217,33 @@ def add_channel_member(channel_id: str, user_id: str, role: str = "member") -> N
         "user_id": user_id,
         "role": role,
     }).execute()
+
+
+def get_channel_knowledge(channel_id: str, page: int = 1, per_page: int = 20) -> dict:
+    """Get paginated Q&A entries for a channel."""
+    client = get_client()
+    offset = (page - 1) * per_page
+
+    count_result = client.table("qa_knowledge").select("id", count="exact").eq("channel_id", channel_id).execute()
+
+    data_result = (
+        client.table("qa_knowledge")
+        .select("id, question_text, answer_text, created_at")
+        .eq("channel_id", channel_id)
+        .order("created_at", desc=True)
+        .range(offset, offset + per_page - 1)
+        .execute()
+    )
+
+    return {
+        "data": data_result.data,
+        "total": count_result.count,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
+def delete_qa(record_id: str) -> None:
+    """Delete a single Q&A entry."""
+    client = get_client()
+    client.table("qa_knowledge").delete().eq("id", record_id).execute()

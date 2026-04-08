@@ -12,15 +12,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import Body, FastAPI, Form, Request, Cookie, Response
+from fastapi import Body, FastAPI, File, Form, Request, Cookie, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
+from lib.csv_importer import process_csv_import
 from lib.gemini_client import generate_answer, get_embedding
-from lib.supabase_client import (search_similar_qa, insert_qa, insert_qa_question_only, update_qa, get_stats,
+from lib.supabase_client import (search_similar_qa, insert_qa, insert_qa_question_only, update_qa, get_stats, insert_qa_with_channel,
     verify_login, get_channels, get_channel_by_slug, create_channel, update_channel, delete_channel,
-    get_channel_stats, search_similar_qa_by_channel, insert_qa_question_only_with_channel, get_user_channels)
+    get_channel_stats, search_similar_qa_by_channel, insert_qa_question_only_with_channel, get_user_channels,
+    get_channel_knowledge, delete_qa)
 from lib.prompt_template import build_prompt, build_channel_prompt
 from lib.html_fragments import build_generate_response_html, build_toast_html
 from lib.auth import create_token, get_current_user
@@ -207,6 +209,108 @@ async def delete_channel_route(request: Request, channel_id: str):
         return JSONResponse(content={"ok": True})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=400)
+
+
+@app.post("/api/channels/{channel_slug}/import")
+async def import_csv(request: Request, channel_slug: str, file: UploadFile = File(...)):
+    """Import Q&A pairs from a CSV file into a channel (admin only)."""
+    user = get_current_user(request)
+    if not user or not user.get("is_admin"):
+        return JSONResponse(content={"error": "Admin access required"}, status_code=403)
+
+    try:
+        channel = get_channel_by_slug(channel_slug)
+        if not channel:
+            return JSONResponse(content={"error": "Channel not found"}, status_code=404)
+
+        content = await file.read()
+
+        result = process_csv_import(
+            file_content=content,
+            channel_id=channel["id"],
+            get_embedding_fn=get_embedding,
+            insert_fn=lambda **kwargs: insert_qa_with_channel(**kwargs),
+        )
+
+        return JSONResponse(content=result)
+
+    except ValueError as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.get("/import", response_class=HTMLResponse)
+async def import_page(request: Request):
+    """Serve the CSV import page (admin only)."""
+    user = get_current_user(request)
+    if not user or not user.get("is_admin"):
+        return RedirectResponse(url="/channels")
+    import_path = STATIC_DIR / "import.html"
+    if not import_path.exists():
+        return HTMLResponse(content="<h1>import.html not found</h1>", status_code=404)
+    return HTMLResponse(content=import_path.read_text(encoding="utf-8"))
+
+
+@app.get("/api/channels/{channel_slug}/knowledge")
+async def list_knowledge(request: Request, channel_slug: str, page: int = 1, per_page: int = 20):
+    """List Q&A entries for a channel (paginated)."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+    try:
+        channel = get_channel_by_slug(channel_slug)
+        if not channel:
+            return JSONResponse(content={"error": "Channel not found"}, status_code=404)
+        data = get_channel_knowledge(channel["id"], page, per_page)
+        return JSONResponse(content=data)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.get("/api/channels/{channel_slug}/export")
+async def export_csv(request: Request, channel_slug: str):
+    """Export channel knowledge as CSV download."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+    try:
+        channel = get_channel_by_slug(channel_slug)
+        if not channel:
+            return JSONResponse(content={"error": "Channel not found"}, status_code=404)
+        from lib.supabase_client import get_client
+        client = get_client()
+        result = client.table("qa_knowledge").select(
+            "question_text, answer_text, created_at"
+        ).eq("channel_id", channel["id"]).order("created_at").execute()
+        import csv, io
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["質問", "回答", "作成日時"])
+        for row in result.data:
+            writer.writerow([row["question_text"], row["answer_text"], row["created_at"]])
+        content = output.getvalue().encode("utf-8-sig")
+        return Response(
+            content=content,
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={channel_slug}_knowledge.csv"},
+        )
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.delete("/api/knowledge/{record_id}")
+async def delete_knowledge(request: Request, record_id: str):
+    """Delete a single Q&A entry (admin only)."""
+    user = get_current_user(request)
+    if not user or not user.get("is_admin"):
+        return JSONResponse(content={"error": "Admin required"}, status_code=403)
+    try:
+        delete_qa(record_id)
+        return JSONResponse(content={"ok": True})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
 
 @app.get("/", response_class=HTMLResponse)
