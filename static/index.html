@@ -58,6 +58,8 @@
         </div>
         <div class="flex items-center gap-4">
             <a href="/channels" class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 px-2.5 py-1 rounded-lg hover:bg-blue-50 transition-colors">チャネル一覧</a>
+            <a href="/admin" id="admin-link" class="text-xs text-slate-500 hover:text-slate-700 border border-slate-200 px-2.5 py-1 rounded-lg hover:bg-slate-50 transition-colors hidden">管理画面</a>
+            <a id="import-link" class="text-xs text-emerald-600 hover:text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-lg hover:bg-emerald-50 transition-colors hidden cursor-pointer">CSVインポート</a>
             <div id="user-info" class="flex items-center gap-3">
                 <div class="flex items-center gap-2">
                     <div class="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-bold" id="user-avatar"></div>
@@ -231,6 +233,12 @@
                 document.getElementById('user-avatar').textContent = initial;
                 // Store admin status
                 window.currentUser = user;
+                if (user.is_admin) {
+                    document.getElementById('admin-link').classList.remove('hidden');
+                    const importLink = document.getElementById('import-link');
+                    importLink.classList.remove('hidden');
+                    importLink.href = '/import' + (currentChannel ? '?channel=' + currentChannel : '');
+                }
             } catch (e) {
                 window.location.href = '/login';
             }
