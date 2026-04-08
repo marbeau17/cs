@@ -13,6 +13,7 @@ def build_generate_response_html(
     similar_results: Optional[List[Dict]] = None,
     record_id: str = "",
     channel_slug: str = "",
+    model_used: str = "",
 ) -> str:
     """Return HTML fragments for the editor area and reference pane.
 
@@ -26,6 +27,12 @@ def build_generate_response_html(
 
     answer_draft_escaped = escape(_answer)
     original_question_escaped = escape(_question)
+
+    model_info = ""
+    if model_used:
+        model_info = (
+            f'    <div class="text-xs text-slate-400 mt-1 text-right">使用モデル: {escape(model_used)}</div>\n'
+        )
 
     # -- Main pane (target: #editor-area) --
     main_pane = (
@@ -45,6 +52,7 @@ def build_generate_response_html(
         '        </svg>\n'
         '        <span class="text-xs text-amber-700">\u304a\u554f\u5408\u305b\u306f\u4fdd\u5b58\u6e08\u307f\u3067\u3059\u3002\u56de\u7b54\u3092\u78ba\u8a8d\u30fb\u7de8\u96c6\u3057\u3001\u300c\u56de\u7b54\u3092\u78ba\u5b9a\u300d\u3092\u62bc\u3057\u3066\u30ca\u30ec\u30c3\u30b8\u3092\u5b8c\u6210\u3055\u305b\u3066\u304f\u3060\u3055\u3044\u3002</span>\n'
         '    </div>\n'
+        f'{model_info}'
         '    <div class="flex gap-3 mt-3">\n'
         '        <button onclick="copyToClipboard()" type="button"\n'
         '            class="flex-1 px-4 py-2.5 bg-white border border-slate-300 text-slate-700 '

@@ -100,6 +100,12 @@
                   hx-target="#editor-area"
                   hx-indicator="#left-pane">
                 <input type="hidden" name="channel_slug" id="channel-slug">
+                <div class="mb-3">
+                    <label class="block text-xs font-medium text-slate-500 mb-1">AIモデル</label>
+                    <select id="model-select" name="model" class="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+                        <option value="">読み込み中...</option>
+                    </select>
+                </div>
                 <textarea
                     id="question-input"
                     name="question"
@@ -251,7 +257,33 @@
             });
         }
 
+        // --- モデル一覧の取得 ---
+        async function loadModels() {
+            try {
+                const res = await fetch('/api/models');
+                if (!res.ok) return;
+                const models = await res.json();
+                const select = document.getElementById('model-select');
+                select.innerHTML = '';
+                models.forEach((m, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = m.id;
+                    opt.textContent = m.name + ' — ' + m.description + ' (' + m.cost + ')';
+                    if (i === 0) opt.selected = true;
+                    select.appendChild(opt);
+                });
+                // Restore saved preference
+                const saved = localStorage.getItem('preferred_model');
+                if (saved) select.value = saved;
+            } catch (e) {}
+        }
+
+        document.getElementById('model-select').addEventListener('change', function() {
+            localStorage.setItem('preferred_model', this.value);
+        });
+
         loadUser();
+        loadModels();
         loadChannel();
         loadStats();
 

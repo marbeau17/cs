@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from lib.csv_importer import process_csv_import
-from lib.gemini_client import generate_answer, get_embedding
+from lib.gemini_client import generate_answer, get_embedding, list_available_models
 from lib.supabase_client import (search_similar_qa, insert_qa, insert_qa_question_only, update_qa, get_stats, insert_qa_with_channel,
     verify_login, get_channels, get_channel_by_slug, create_channel, update_channel, delete_channel,
     get_channel_stats, search_similar_qa_by_channel, insert_qa_question_only_with_channel, get_user_channels,
@@ -116,6 +116,15 @@ async def me(request: Request):
         "role": user.get("role"),
         "is_admin": user.get("is_admin"),
     })
+
+
+@app.get("/api/models")
+async def get_models(request: Request):
+    """List available AI models."""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
+    return JSONResponse(content=list_available_models())
 
 
 @app.get("/channels", response_class=HTMLResponse)
@@ -329,7 +338,7 @@ async def serve_index(request: Request):
 
 
 @app.post("/api/generate", response_class=HTMLResponse)
-async def generate(request: Request, question: str = Form(...), channel_slug: str = Form("")):
+async def generate(request: Request, question: str = Form(...), channel_slug: str = Form(""), model: str = Form("")):
     user = get_current_user(request)
     if not user:
         return JSONResponse(content={"error": "Not authenticated"}, status_code=401)
@@ -351,10 +360,14 @@ async def generate(request: Request, question: str = Form(...), channel_slug: st
             prompt = build_prompt(question, similar_results)
             record_id = insert_qa_question_only(question, query_embedding)
 
-        draft_answer = generate_answer(prompt)
+        from lib.gemini_client import AVAILABLE_MODELS, DEFAULT_MODEL
+        actual_model = model if model in AVAILABLE_MODELS else DEFAULT_MODEL
+        draft_answer = generate_answer(prompt, model=actual_model)
+        model_name = AVAILABLE_MODELS[actual_model]["name"]
         html = build_generate_response_html(
             question=question, draft_answer=draft_answer,
             similar_results=similar_results, record_id=record_id,
+            model_used=model_name,
         )
         return HTMLResponse(content=html)
     except Exception as e:
